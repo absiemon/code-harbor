@@ -1,5 +1,6 @@
 import * as dotenv from 'dotenv'
 dotenv.config()
+import * as fs from 'fs-extra'
 import { createRedisClient } from './config/redisConfig'
 import { getAllFilesFromCloud, copyFinalDist } from './utills/supabaseStorage';
 import { buildProject, installDependencies } from './utills/buildAndContainerize';
@@ -27,8 +28,15 @@ async function main(){
 
         console.log("Build Successful")
 
+        //function to upload the build to cloud storage
         await copyFinalDist(path_location, build_folder, username, project_id);
-        // publisher.hSet("status", id, "deployed")
+
+        //after uploading deleting locally brought folder
+        await fs.remove(username)
+
+        //overriding the status of the project to deployed so that 
+        //request handler service can track the status
+        subscriber.hSet("status", project_id, "deployed")
     }
 }
 

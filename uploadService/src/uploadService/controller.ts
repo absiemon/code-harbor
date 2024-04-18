@@ -1,7 +1,8 @@
 import { Request, Response } from 'express'
 import { generateHexCode } from '../utills/generateRandomId';
 import simpleGit from 'simple-git';
-import path from 'path';
+import * as path from 'path';
+import * as fs from 'fs-extra'
 import { uploadFile } from '../config/supabaseS3';
 import { getAllFiles } from '../utills/getAllFilesFolder';
 import { createRedisClient } from '../config/redisConfig';
@@ -20,11 +21,15 @@ export const uploadCodebase = async (req: RequestWithUser, res: Response) => {
     
         const project_id = project_name + '_' + id;
         const path_location = `${username}/original/${project_id}`
-        await simpleGit().clone(repoUrl, path_location)
+
+        try {
+            await simpleGit().clone(repoUrl, path_location)
+        } catch (error) {
+            return res.status(500).json({ error: "Error in cloning repository", details: error })
+        }
 
         //After uploading getting all files in an array with absolute path
         const files = getAllFiles(path_location);
-
 
         //uploading all the files one by one to object storage
         await Promise.all(files.map(async (file) => {
@@ -38,6 +43,14 @@ export const uploadCodebase = async (req: RequestWithUser, res: Response) => {
         
         await publisher.lPush('build-queue', JSON.stringify(data))
         await publisher.expire('build-queue', 3600)
+
+        //setting the status of deployment in the redis DB
+        await publisher.hSet('status', project_id, 'uploaded')
+
+        //deleting the locally cloned repo after uploading to supabase storage.
+        await fs.remove(username);
+
+        console.log("removed locally cloned repo!")
 
         return res.status(200).json({
             message: "Project cloned successfully",
